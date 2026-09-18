@@ -103,6 +103,11 @@ def load_data():
         df['rating'] = 'Not Rated'
     else:
         df['rating'] = df['rating'].fillna('Not Rated')
+    # Force to plain strings so sorted()/unique() never chokes on a
+    # mixed-type column (e.g. stray numeric ratings in the source CSV)
+    df['rating'] = df['rating'].astype(str)
+    if 'listed_in' in df.columns:
+        df['listed_in'] = df['listed_in'].fillna('Unknown')
         
     df['date_added'] = pd.to_datetime(df['date_added'].str.strip(), errors='coerce')
     df['year_added'] = df['date_added'].dt.year
