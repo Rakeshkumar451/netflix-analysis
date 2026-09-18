@@ -15,7 +15,7 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────────
-# MINIMALIST FIGMA-STYLE STYLING
+# MINIMALIST FIGMA-STYLE STYLING & ANIMATIONS
 # ─────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -26,43 +26,51 @@ st.markdown("""
         font-family: 'Inter', sans-serif;
     }
     
-    /* Light, airy background */
-    .stApp {
-        background-color: #f8f9fa;
-    }
-    
-    /* Hide Streamlit branding */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    
     /* Clean up padding */
     .block-container {
         padding-top: 2rem;
         padding-bottom: 2rem;
         max-width: 1200px;
     }
+
+    /* Keyframe Animations */
+    @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(15px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
+    /* Apply animations to sections */
+    .main .block-container { animation: fadeIn 0.6s ease-out; }
+    [data-testid="stMetric"] { animation: fadeInUp 0.5s ease-out forwards; }
+    .stTabs { animation: fadeInUp 0.7s ease-out forwards; }
     
     /* Minimalist Metric Cards */
     [data-testid="stMetric"] {
-        background-color: #ffffff;
-        border: 1px solid #e0e0e0;
+        background-color: #FFFFFF;
+        border: 1px solid #EAEAEA;
         border-radius: 12px;
         padding: 20px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.02);
-        transition: box-shadow 0.2s ease;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+        transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
     }
     [data-testid="stMetric"]:hover {
-        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        transform: translateY(-5px);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+        border-color: #E50914;
     }
     [data-testid="stMetricValue"] {
         font-size: 2rem;
         font-weight: 700;
-        color: #1a1a1a;
+        color: #1A1A1A;
     }
     [data-testid="stMetricLabel"] {
         font-size: 0.85rem;
         color: #666666;
-        font-weight: 500;
+        font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 0.5px;
     }
@@ -70,58 +78,68 @@ st.markdown("""
     /* Clean Tab Styling */
     .stTabs [data-baseweb="tab-list"] {
         gap: 24px;
-        border-bottom: 1px solid #e0e0e0;
+        border-bottom: 1px solid #EAEAEA;
+        background-color: transparent;
     }
     .stTabs [data-baseweb="tab"] {
         color: #666666;
-        font-weight: 500;
-        padding: 10px 0px;
-        border-bottom: 2px solid transparent;
-        background-color: transparent !important;
+        font-weight: 600;
+        padding: 12px 0px;
+        border-bottom: 3px solid transparent;
+        transition: all 0.3s ease;
+    }
+    .stTabs [data-baseweb="tab"]:hover {
+        color: #E50914;
     }
     .stTabs [aria-selected="true"] {
         color: #E50914 !important;
-        border-bottom: 2px solid #E50914 !important;
+        border-bottom: 3px solid #E50914 !important;
+        background-color: transparent !important;
     }
     
-    /* Clean Card Containers for Charts */
-    [data-testid="stVerticalBlock"] > [data-testid="stVerticalBlockBorderWrapper"] {
-        background-color: #ffffff;
+    /* Card containers */
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        background-color: #FFFFFF;
         border-radius: 12px;
-        border: 1px solid #e0e0e0;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.02);
-        padding: 10px;
+        border: 1px solid #EAEAEA;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+        padding: 20px;
+        transition: box-shadow 0.3s ease;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"]:hover {
+        box-shadow: 0 8px 20px rgba(0,0,0,0.06);
     }
     
     /* Insight Boxes */
     .insight-box {
-        background-color: #f8f9fa;
+        background-color: #F8F9FA;
         border-left: 4px solid #E50914;
         padding: 15px 20px;
-        border-radius: 4px;
+        border-radius: 6px;
         margin-top: 15px;
-        font-size: 0.9rem;
+        font-size: 0.95rem;
         color: #444;
+        animation: fadeIn 0.8s ease-out;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # Set a clean minimalist theme for charts
 sns.set_theme(style="white")
-plt.rcParams['figure.facecolor'] = 'white'
-plt.rcParams['axes.facecolor'] = 'white'
+plt.rcParams['figure.facecolor'] = '#FFFFFF'
+plt.rcParams['axes.facecolor'] = '#FFFFFF'
 plt.rcParams['axes.spines.top'] = False
 plt.rcParams['axes.spines.right'] = False
 plt.rcParams['axes.spines.left'] = False
 plt.rcParams['axes.spines.bottom'] = True
-plt.rcParams['axes.edgecolor'] = '#e0e0e0'
+plt.rcParams['axes.edgecolor'] = '#EAEAEA'
 plt.rcParams['axes.labelcolor'] = '#666666'
 plt.rcParams['xtick.color'] = '#666666'
 plt.rcParams['ytick.color'] = '#666666'
-plt.rcParams['text.color'] = '#1a1a1a'
+plt.rcParams['text.color'] = '#1A1A1A'
 
 # ─────────────────────────────────────────────
-# DATA LOADING & MERGING (Fully fixed)
+# DATA LOADING & MERGING
 # ─────────────────────────────────────────────
 @st.cache_data(show_spinner=False)
 def load_data():
@@ -150,7 +168,7 @@ def load_data():
     )
     df['title_clean'] = df['title'].str.lower().str.strip()
 
-    # 2. ENRICHED DATA (IMDb & TMDb)
+    # 2. ENRICHED DATA
     try:
         enriched = pd.read_csv('data/netflix_large_dataset_cleaned.csv', encoding='latin-1')
         enriched.columns = enriched.columns.str.lower().str.strip()
@@ -158,13 +176,14 @@ def load_data():
         if title_col:
             enriched['title_clean'] = enriched[title_col].str.lower().str.strip()
             cols_to_keep = ['title_clean']
-            for c in ['imdb_score', 'tmdb_popularity', 'imdb_votes']:
-                if c in enriched.columns: cols_to_keep.append(c)
+            for c in enriched.columns:
+                if any(k in c for k in ['imdb', 'score', 'rating', 'popularity', 'vote']):
+                    cols_to_keep.append(c)
             df = pd.merge(df, enriched[cols_to_keep], on='title_clean', how='left')
     except FileNotFoundError:
-        st.sidebar.warning("⚠️ Enriched dataset not found.")
+        pass
 
-    # 3. ROTTEN TOMATOES & METACRITIC
+    # 3. ROTTEN TOMATOES
     try:
         rt = pd.read_csv('data/netflix-rotten-tomatoes-metacritic-imdb.csv', encoding='latin-1')
         rt.columns = rt.columns.str.lower().str.strip().str.replace(' ', '_')
@@ -172,13 +191,15 @@ def load_data():
         if title_col:
             rt['title_clean'] = rt[title_col].str.lower().str.strip()
             cols_to_keep = ['title_clean']
-            for c in ['rotten_tomatoes', 'metacritic']:
-                if c in rt.columns: cols_to_keep.append(c)
-            df = pd.merge(df, rt[cols_to_keep], on='title_clean', how='left')
+            for c in rt.columns:
+                if 'rotten' in c or 'metacritic' in c:
+                    cols_to_keep.append(c)
+            if len(cols_to_keep) > 1:
+                df = pd.merge(df, rt[cols_to_keep], on='title_clean', how='left')
     except FileNotFoundError:
         pass
 
-    # 4. OFFICIAL VIEWERSHIP (Global) - latin-1 encoding fixes the UnicodeDecodeError
+    # 4. VIEWERSHIP
     try:
         global_views = pd.read_csv('data/all-weeks-global.csv', encoding='latin-1')
         global_views.columns = global_views.columns.str.lower().str.strip()
@@ -186,38 +207,24 @@ def load_data():
         if title_col:
             global_views = global_views.rename(columns={title_col: 'title_clean'})
             global_views['title_clean'] = global_views['title_clean'].str.lower().str.strip()
-            hours_col = next((c for c in global_views.columns if 'hours' in c or 'view' in c), 'weekly_hours_viewed')
-            views_grouped = global_views.groupby('title_clean')[hours_col].sum().reset_index()
-            views_grouped = views_grouped.rename(columns={hours_col: 'total_hours_viewed'})
-            df = pd.merge(df, views_grouped, on='title_clean', how='left')
-    except FileNotFoundError:
-        pass
-
-    # 5. CONTENT INTELLIGENCE
-    try:
-        intel = pd.read_csv('data/netflix_content_intelligence_combined.csv', encoding='latin-1')
-        intel.columns = intel.columns.str.lower().str.strip()
-        title_col = next((c for c in intel.columns if 'title' in c), None)
-        if title_col:
-            intel['title_clean'] = intel[title_col].str.lower().str.strip()
-            cols_to_keep = ['title_clean']
-            for c in ['sentiment_score', 'popularity_rank', 'content_type']:
-                if c in intel.columns: cols_to_keep.append(c)
-            if len(cols_to_keep) > 1:
-                df = pd.merge(df, intel[cols_to_keep], on='title_clean', how='left')
+            hours_col = next((c for c in global_views.columns if 'hours' in c or 'view' in c), None)
+            if hours_col:
+                views_grouped = global_views.groupby('title_clean')[hours_col].sum().reset_index()
+                views_grouped = views_grouped.rename(columns={hours_col: 'total_hours_viewed'})
+                df = pd.merge(df, views_grouped, on='title_clean', how='left')
     except FileNotFoundError:
         pass
 
     return df
 
-with st.spinner("Loading and merging all datasets..."):
+with st.spinner("🎬 Loading and merging all datasets..."):
     df = load_data()
 
 # ─────────────────────────────────────────────
 # SIDEBAR FILTERS
 # ─────────────────────────────────────────────
 with st.sidebar:
-    st.header("Filters")
+    st.markdown("<h2 style='color: #1A1A1A; font-size: 1.2rem;'>Filters</h2>", unsafe_allow_html=True)
     
     types = st.multiselect(
         "Content Type",
@@ -237,7 +244,7 @@ with st.sidebar:
     ratings = st.multiselect(
         "Age Rating",
         options=sorted(df['rating'].unique()),
-        default=[]
+        default=sorted(df['rating'].unique())[:5] # Default to top 5 to prevent empty view
     )
 
     if st.button("Reset Filters"):
@@ -264,15 +271,17 @@ col1.metric("Total Titles", f"{len(filtered):,}")
 col2.metric("Movies", f"{(filtered['type'] == 'Movie').sum():,}")
 col3.metric("TV Shows", f"{(filtered['type'] == 'TV Show').sum():,}")
 col4.metric("Countries", f"{filtered['country'].str.split(', ').explode().nunique():,}")
-if 'imdb_score' in filtered.columns:
-    avg_imdb = filtered['imdb_score'].mean()
+
+# Dynamically find the IMDb column
+imdb_col = next((c for c in filtered.columns if 'imdb' in c and ('score' in c or 'rating' in c)), None)
+if imdb_col:
+    avg_imdb = pd.to_numeric(filtered[imdb_col], errors='coerce').mean()
     col5.metric("Avg IMDb Score", f"{avg_imdb:.1f}" if pd.notna(avg_imdb) else "N/A")
 else:
     col5.metric("Avg IMDb Score", "N/A")
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# Guard: empty dataframe
 if len(filtered) == 0:
     st.warning("No titles match your filters. Try broadening them in the sidebar.")
     st.stop()
@@ -281,50 +290,45 @@ if len(filtered) == 0:
 # TABS SETUP
 # ─────────────────────────────────────────────
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-    "Overview", 
-    "Trends", 
-    "Geography", 
-    "Genres", 
-    "Scores & Ratings", 
-    "Viewership",
-    "Explore"
+    "Overview", "Trends", "Geography", "Genres", "Scores & Ratings", "Viewership", "Explore"
 ])
 
 # ─── TAB 1: OVERVIEW ───
 with tab1:
     with st.container(border=True):
-        st.subheader("Content Distribution")
-        c1, c2 = st.columns([1, 1])
-        
+        c1, c2 = st.columns([1, 2])
         with c1:
+            st.subheader("Movies vs TV Shows")
             type_counts = filtered['type'].value_counts()
-            fig, ax = plt.subplots(figsize=(6, 5))
+            fig, ax = plt.subplots(figsize=(5, 5))
             ax.pie(type_counts.values, labels=type_counts.index, autopct='%1.1f%%',
-                   colors=['#E50914', '#CCCCCC'], startangle=90, wedgeprops=dict(width=0.4, edgecolor='white', linewidth=2))
-            ax.set_title("Movies vs TV Shows", pad=20)
-            st.pyplot(fig)
+                   colors=['#E50914', '#DDDDDD'], startangle=90, 
+                   wedgeprops=dict(width=0.4, edgecolor='white', linewidth=3),
+                   textprops=dict(color='#1A1A1A', fontsize=11, fontweight='600'))
+            st.pyplot(fig, use_container_width=True)
             plt.close(fig)
 
         with c2:
+            st.subheader("Overview Insight")
             st.markdown("<br>", unsafe_allow_html=True)
             movies_pct = (filtered['type'] == 'Movie').sum() / len(filtered) * 100
             st.markdown(f"""
             <div class='insight-box'>
                 Netflix's catalog in view is <b>{movies_pct:.1f}% Movies</b> and <b>{100-movies_pct:.1f}% TV Shows</b>. 
-                Movies have historically dominated, but TV content has been growing faster in recent years.
+                Movies have historically dominated the platform, but TV content has been growing faster in recent years.
             </div>
             """, unsafe_allow_html=True)
 
     with st.container(border=True):
         st.subheader("Top Ratings by Count")
         ratings_data = filtered['rating'].value_counts().head(10)
-        fig, ax = plt.subplots(figsize=(10, 4))
+        fig, ax = plt.subplots(figsize=(12, 4))
         bars = ax.bar(ratings_data.index, ratings_data.values, color='#E50914', width=0.5)
         for i, v in enumerate(ratings_data.values):
-            ax.text(i, v + max(ratings_data.values)*0.01, f'{v:,}', ha='center', fontsize=9, color='#666666')
+            ax.text(i, v + max(ratings_data.values)*0.01, f'{v:,}', ha='center', fontsize=10, color='#666666')
         ax.set_ylabel("Count")
         plt.xticks(rotation=0)
-        st.pyplot(fig)
+        st.pyplot(fig, use_container_width=True)
         plt.close(fig)
         
         st.markdown("""
@@ -334,7 +338,6 @@ with tab1:
         </div>
         """, unsafe_allow_html=True)
 
-
 # ─── TAB 2: TRENDS ───
 with tab2:
     with st.container(border=True):
@@ -343,12 +346,12 @@ with tab2:
         yearly = yearly[yearly['year_added'] >= 2008]['year_added'].value_counts().sort_index()
         
         fig, ax = plt.subplots(figsize=(12, 4))
-        ax.plot(yearly.index, yearly.values, color='#E50914', linewidth=2)
+        ax.plot(yearly.index, yearly.values, color='#E50914', linewidth=3)
         ax.fill_between(yearly.index, yearly.values, color='#E50914', alpha=0.1)
         ax.set_xlabel("Year")
         ax.set_ylabel("Number of Titles")
-        ax.grid(axis='y', linestyle='--', alpha=0.3)
-        st.pyplot(fig)
+        ax.grid(axis='y', linestyle='--', alpha=0.2)
+        st.pyplot(fig, use_container_width=True)
         plt.close(fig)
         
         st.markdown("""
@@ -369,10 +372,9 @@ with tab2:
         ax.legend(frameon=False)
         ax.set_xlabel("Year")
         ax.set_ylabel("Number of Titles")
-        ax.grid(axis='y', linestyle='--', alpha=0.3)
-        st.pyplot(fig)
+        ax.grid(axis='y', linestyle='--', alpha=0.2)
+        st.pyplot(fig, use_container_width=True)
         plt.close(fig)
-
 
 # ─── TAB 3: GEOGRAPHY ───
 with tab3:
@@ -386,8 +388,8 @@ with tab3:
         for i, v in enumerate(countries.values[::-1]):
             ax.text(v + max(countries.values)*0.01, i, f'{v:,}', va='center', fontsize=10, color='#666666')
         ax.set_xlabel("Number of Titles")
-        ax.grid(axis='x', linestyle='--', alpha=0.3)
-        st.pyplot(fig)
+        ax.grid(axis='x', linestyle='--', alpha=0.2)
+        st.pyplot(fig, use_container_width=True)
         plt.close(fig)
         
         st.markdown("""
@@ -396,7 +398,6 @@ with tab3:
             India's massive presence reflects Netflix's aggressive investment in Bollywood and regional content.
         </div>
         """, unsafe_allow_html=True)
-
 
 # ─── TAB 4: GENRES ───
 with tab4:
@@ -409,8 +410,8 @@ with tab4:
         for i, v in enumerate(genres.values[::-1]):
             ax.text(v + max(genres.values)*0.01, i, f'{v:,}', va='center', fontsize=10, color='#666666')
         ax.set_xlabel("Number of Titles")
-        ax.grid(axis='x', linestyle='--', alpha=0.3)
-        st.pyplot(fig)
+        ax.grid(axis='x', linestyle='--', alpha=0.2)
+        st.pyplot(fig, use_container_width=True)
         plt.close(fig)
         
         st.markdown("""
@@ -430,78 +431,59 @@ with tab4:
             for i, v in enumerate(longest['duration_int'][::-1]):
                 ax.text(v + 2, i, f'{int(v)} min', va='center', fontsize=9, color='#666666')
             ax.set_xlabel("Duration (minutes)")
-            ax.grid(axis='x', linestyle='--', alpha=0.3)
-            st.pyplot(fig)
+            ax.grid(axis='x', linestyle='--', alpha=0.2)
+            st.pyplot(fig, use_container_width=True)
             plt.close(fig)
-
 
 # ─── TAB 5: SCORES & RATINGS ───
 with tab5:
     with st.container(border=True):
         st.subheader("Critical Reception Analysis")
         
-        if 'imdb_score' in filtered.columns or 'rotten_tomatoes' in filtered.columns:
+        if imdb_col:
             c1, c2 = st.columns(2)
+            pop_col = next((c for c in filtered.columns if 'popularity' in c or 'vote' in c), None)
             
             with c1:
-                st.markdown("**IMDb Score vs. TMDb Popularity**")
-                if 'imdb_score' in filtered.columns and 'tmdb_popularity' in filtered.columns:
-                    plot_df = filtered.dropna(subset=['imdb_score', 'tmdb_popularity'])
+                st.markdown("**IMDb Score vs. Popularity**")
+                if pop_col:
+                    plot_df = filtered.dropna(subset=[imdb_col, pop_col]).copy()
+                    plot_df[imdb_col] = pd.to_numeric(plot_df[imdb_col], errors='coerce')
+                    plot_df[pop_col] = pd.to_numeric(plot_df[pop_col], errors='coerce')
+                    plot_df = plot_df.dropna(subset=[imdb_col, pop_col])
+                    
                     if not plot_df.empty:
                         fig, ax = plt.subplots(figsize=(8, 5))
-                        sns.scatterplot(data=plot_df, x='imdb_score', y='tmdb_popularity',
-                                        hue='type', alpha=0.6, ax=ax,
+                        sns.scatterplot(data=plot_df, x=imdb_col, y=pop_col,
+                                        hue='type', alpha=0.7, ax=ax,
                                         palette={'Movie': '#E50914', 'TV Show': '#999999'})
                         ax.set_xlabel("IMDb Score")
-                        ax.set_ylabel("TMDb Popularity")
-                        ax.grid(linestyle='--', alpha=0.3)
-                        st.pyplot(fig)
+                        ax.set_ylabel("Popularity")
+                        ax.grid(linestyle='--', alpha=0.2)
+                        st.pyplot(fig, use_container_width=True)
                         plt.close(fig)
                     else:
                         st.info("Not enough overlapping data for this chart.")
                 else:
-                    st.info("IMDb or TMDb columns missing.")
+                    st.info("Popularity column missing.")
 
             with c2:
                 st.markdown("**Top 10 Highest Rated on IMDb**")
-                if 'imdb_score' in filtered.columns:
-                    top_rated = filtered[filtered['type'] == 'Movie'].dropna(subset=['imdb_score']).nlargest(10, 'imdb_score')
-                    if not top_rated.empty:
-                        fig, ax = plt.subplots(figsize=(8, 5))
-                        bars = ax.barh(top_rated['title'][::-1], top_rated['imdb_score'][::-1], color='#E50914', height=0.5)
-                        for i, v in enumerate(top_rated['imdb_score'][::-1]):
-                            ax.text(v + 0.1, i, f'{v:.1f}', va='center', fontsize=9, color='#666666')
-                        ax.set_xlabel("IMDb Score")
-                        ax.grid(axis='x', linestyle='--', alpha=0.3)
-                        st.pyplot(fig)
-                        plt.close(fig)
-            
-            st.divider()
-            st.markdown("**Compare Critics: IMDb vs Rotten Tomatoes**")
-            if 'imdb_score' in filtered.columns and 'rotten_tomatoes' in filtered.columns:
-                compare_df = filtered.dropna(subset=['imdb_score', 'rotten_tomatoes']).copy()
-                if not compare_df.empty:
-                    compare_df['rotten_tomatoes'] = compare_df['rotten_tomatoes'].astype(str).str.replace('%', '')
-                    compare_df['rotten_tomatoes'] = pd.to_numeric(compare_df['rotten_tomatoes'], errors='coerce')
-                    compare_df = compare_df.dropna(subset=['rotten_tomatoes'])
-
-                    if not compare_df.empty:
-                        fig, ax = plt.subplots(figsize=(10, 4))
-                        ax.scatter(compare_df['rotten_tomatoes'], compare_df['imdb_score'] * 10, 
-                                   alpha=0.5, color='#E50914', edgecolors='none')
-                        ax.set_xlabel("Rotten Tomatoes Score (%)")
-                        ax.set_ylabel("IMDb Score (scaled to 100)")
-                        ax.set_title("IMDb vs Rotten Tomatoes Score Comparison")
-                        ax.grid(linestyle='--', alpha=0.3)
-                        st.pyplot(fig)
-                        plt.close(fig)
-                    else:
-                        st.info("Not enough valid data to compare scores.")
-                else:
-                    st.info("No overlapping data for score comparison.")
+                top_rated = filtered[filtered['type'] == 'Movie'].copy()
+                top_rated[imdb_col] = pd.to_numeric(top_rated[imdb_col], errors='coerce')
+                top_rated = top_rated.dropna(subset=[imdb_col]).nlargest(10, imdb_col)
+                
+                if not top_rated.empty:
+                    fig, ax = plt.subplots(figsize=(8, 5))
+                    bars = ax.barh(top_rated['title'][::-1], top_rated[imdb_col][::-1], color='#E50914', height=0.5)
+                    for i, v in enumerate(top_rated[imdb_col][::-1]):
+                        ax.text(v + 0.1, i, f'{v:.1f}', va='center', fontsize=9, color='#666666')
+                    ax.set_xlabel("IMDb Score")
+                    ax.grid(axis='x', linestyle='--', alpha=0.2)
+                    st.pyplot(fig, use_container_width=True)
+                    plt.close(fig)
         else:
-            st.warning("⚠️ No score data found. Please ensure datasets are loaded correctly.")
-
+            st.warning("⚠️ IMDb score data not found. Please check your enriched dataset.")
 
 # ─── TAB 6: VIEWERSHIP ───
 with tab6:
@@ -519,8 +501,8 @@ with tab6:
                     ax.text(v + (top_viewed['total_hours_viewed'].max() * 0.01), i, label, va='center', fontsize=9, color='#666666')
                 ax.set_xlabel("Total Hours Viewed")
                 ax.set_title("Top 15 Most-Watched Titles on Netflix")
-                ax.grid(axis='x', linestyle='--', alpha=0.3)
-                st.pyplot(fig)
+                ax.grid(axis='x', linestyle='--', alpha=0.2)
+                st.pyplot(fig, use_container_width=True)
                 plt.close(fig)
                 
                 st.markdown("""
@@ -533,7 +515,6 @@ with tab6:
                 st.info("No viewership data available after merging.")
         else:
             st.warning("⚠️ Viewership dataset missing or column names mismatch.")
-
 
 # ─── TAB 7: EXPLORE ───
 with tab7:
@@ -549,8 +530,8 @@ with tab7:
         st.markdown(f"Showing **{len(view):,}** titles")
         
         display_cols = ['title', 'type', 'country', 'release_year', 'rating', 'duration']
-        if 'imdb_score' in view.columns:
-            display_cols.append('imdb_score')
+        if imdb_col:
+            display_cols.append(imdb_col)
         if 'total_hours_viewed' in view.columns:
             display_cols.append('total_hours_viewed')
             
@@ -558,7 +539,7 @@ with tab7:
             view[display_cols].rename(columns={
                 'title': 'Title', 'type': 'Type', 'country': 'Country',
                 'release_year': 'Year', 'rating': 'Rating', 'duration': 'Duration',
-                'imdb_score': 'IMDb', 'total_hours_viewed': 'Hours Viewed'
+                imdb_col: 'IMDb', 'total_hours_viewed': 'Hours Viewed'
             }),
             width='stretch',
             height=400
@@ -577,7 +558,7 @@ with tab7:
 # ─────────────────────────────────────────────
 st.markdown("<br><br>", unsafe_allow_html=True)
 st.markdown("""
-<div style='text-align: center; color: #999999; font-size: 0.8rem; border-top: 1px solid #e0e0e0; padding-top: 20px;'>
+<div style='text-align: center; color: #999999; font-size: 0.8rem; border-top: 1px solid #EAEAEA; padding-top: 20px;'>
     Built with Python, Pandas, Matplotlib & Streamlit<br>
     Data: Kaggle Netflix Movies and TV Shows Dataset + Enriched Sources
 </div>
