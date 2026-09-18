@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
+import os
 
 # ─────────────────────────────────────────────
 # PAGE CONFIG
@@ -26,6 +27,11 @@ st.markdown("""
         font-family: 'Inter', sans-serif;
     }
     
+    /* Light, airy background */
+    .stApp {
+        background-color: #F8F9FA;
+    }
+    
     /* Clean up padding */
     .block-container {
         padding-top: 2rem;
@@ -43,7 +49,7 @@ st.markdown("""
         to { opacity: 1; }
     }
 
-    /* Apply animations to sections */
+    /* Apply animations */
     .main .block-container { animation: fadeIn 0.6s ease-out; }
     [data-testid="stMetric"] { animation: fadeInUp 0.5s ease-out forwards; }
     .stTabs { animation: fadeInUp 0.7s ease-out forwards; }
@@ -79,7 +85,6 @@ st.markdown("""
     .stTabs [data-baseweb="tab-list"] {
         gap: 24px;
         border-bottom: 1px solid #EAEAEA;
-        background-color: transparent;
     }
     .stTabs [data-baseweb="tab"] {
         color: #666666;
@@ -94,7 +99,6 @@ st.markdown("""
     .stTabs [aria-selected="true"] {
         color: #E50914 !important;
         border-bottom: 3px solid #E50914 !important;
-        background-color: transparent !important;
     }
     
     /* Card containers */
@@ -139,23 +143,42 @@ plt.rcParams['ytick.color'] = '#666666'
 plt.rcParams['text.color'] = '#1A1A1A'
 
 # ─────────────────────────────────────────────
+# SAFE DATA LOADING HELPER
+# ─────────────────────────────────────────────
+def safe_read_csv(filepath):
+    """Tries to read a CSV safely, handling empty files and encoding issues."""
+    if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
+        return None
+    for encoding in ['utf-8', 'latin-1', 'cp1252']:
+        try:
+            return pd.read_csv(filepath, encoding=encoding)
+        except UnicodeDecodeError:
+            continue
+        except Exception:
+            return None
+    return None
+
+# ─────────────────────────────────────────────
 # DATA LOADING & MERGING
 # ─────────────────────────────────────────────
 @st.cache_data(show_spinner=False)
 def load_data():
     # 1. BASE DATA
-    try:
-        df = pd.read_csv('data/netflix_titles.csv')
-    except FileNotFoundError:
-        st.error("Error: 'data/netflix_titles.csv' not found.")
+    df = safe_read_csv('data/netflix_titles.csv')
+    if df is None:
+        st.error("Error: 'data/netflix_titles.csv' not found or empty.")
         st.stop()
-    except UnicodeDecodeError:
-        df = pd.read_csv('data/netflix_titles.csv', encoding='latin-1')
     
+    # Clean base data
     df['country'] = df['country'].fillna('Unknown')
     df['director'] = df['director'].fillna('Unknown')
     df['cast'] = df['cast'].fillna('Unknown')
-    df['rating'] = df['rating'].fillna('Not Rated')
+    # Ensure rating exists!
+    if 'rating' not in df.columns:
+        df['rating'] = 'Not Rated'
+    else:
+        df['rating'] = df['rating'].fillna('Not Rated')
+        
     df['date_added'] = pd.to_datetime(df['date_added'].str.strip(), errors='coerce')
     df['year_added'] = df['date_added'].dt.year
     df['release_year'] = pd.to_numeric(df['release_year'], errors='coerce')
@@ -169,39 +192,38 @@ def load_data():
     df['title_clean'] = df['title'].str.lower().str.strip()
 
     # 2. ENRICHED DATA
-    try:
-        enriched = pd.read_csv('data/netflix_large_dataset_cleaned.csv', encoding='latin-1')
+    enriched = safe_read_csv('data/netflix_large_dataset_cleaned.csv')
+    if enriched is not None:
         enriched.columns = enriched.columns.str.lower().str.strip()
         title_col = next((c for c in enriched.columns if 'title' in c), None)
         if title_col:
             enriched['title_clean'] = enriched[title_col].str.lower().str.strip()
+            # Only merge relevant score columns to avoid conflicts
             cols_to_keep = ['title_clean']
             for c in enriched.columns:
-                if any(k in c for k in ['imdb', 'score', 'rating', 'popularity', 'vote']):
+                if any(k in c for k in ['imdb', 'score', 'popularity', 'vote']) and c not in df.columns:
                     cols_to_keep.append(c)
             df = pd.merge(df, enriched[cols_to_keep], on='title_clean', how='left')
-    except FileNotFoundError:
-        pass
+    else:
+        st.sidebar.warning("⚠️ Enriched dataset missing or empty.")
 
     # 3. ROTTEN TOMATOES
-    try:
-        rt = pd.read_csv('data/netflix-rotten-tomatoes-metacritic-imdb.csv', encoding='latin-1')
+    rt = safe_read_csv('data/netflix-rotten-tomatoes-metacritic-imdb.csv')
+    if rt is not None:
         rt.columns = rt.columns.str.lower().str.strip().str.replace(' ', '_')
         title_col = next((c for c in rt.columns if 'title' in c or 'name' in c), None)
         if title_col:
             rt['title_clean'] = rt[title_col].str.lower().str.strip()
             cols_to_keep = ['title_clean']
             for c in rt.columns:
-                if 'rotten' in c or 'metacritic' in c:
+                if ('rotten' in c or 'metacritic' in c) and c not in df.columns:
                     cols_to_keep.append(c)
             if len(cols_to_keep) > 1:
                 df = pd.merge(df, rt[cols_to_keep], on='title_clean', how='left')
-    except FileNotFoundError:
-        pass
 
     # 4. VIEWERSHIP
-    try:
-        global_views = pd.read_csv('data/all-weeks-global.csv', encoding='latin-1')
+    global_views = safe_read_csv('data/all-weeks-global.csv')
+    if global_views is not None:
         global_views.columns = global_views.columns.str.lower().str.strip()
         title_col = next((c for c in global_views.columns if 'title' in c or 'show' in c), None)
         if title_col:
@@ -212,8 +234,6 @@ def load_data():
                 views_grouped = global_views.groupby('title_clean')[hours_col].sum().reset_index()
                 views_grouped = views_grouped.rename(columns={hours_col: 'total_hours_viewed'})
                 df = pd.merge(df, views_grouped, on='title_clean', how='left')
-    except FileNotFoundError:
-        pass
 
     return df
 
@@ -244,7 +264,7 @@ with st.sidebar:
     ratings = st.multiselect(
         "Age Rating",
         options=sorted(df['rating'].unique()),
-        default=sorted(df['rating'].unique())[:5] # Default to top 5 to prevent empty view
+        default=sorted(df['rating'].unique())[:5]
     )
 
     if st.button("Reset Filters"):
@@ -272,7 +292,6 @@ col2.metric("Movies", f"{(filtered['type'] == 'Movie').sum():,}")
 col3.metric("TV Shows", f"{(filtered['type'] == 'TV Show').sum():,}")
 col4.metric("Countries", f"{filtered['country'].str.split(', ').explode().nunique():,}")
 
-# Dynamically find the IMDb column
 imdb_col = next((c for c in filtered.columns if 'imdb' in c and ('score' in c or 'rating' in c)), None)
 if imdb_col:
     avg_imdb = pd.to_numeric(filtered[imdb_col], errors='coerce').mean()
@@ -483,7 +502,7 @@ with tab5:
                     st.pyplot(fig, use_container_width=True)
                     plt.close(fig)
         else:
-            st.warning("⚠️ IMDb score data not found. Please check your enriched dataset.")
+            st.warning("⚠️ IMDb score data not found. Please re-download 'netflix_large_dataset_cleaned.csv'.")
 
 # ─── TAB 6: VIEWERSHIP ───
 with tab6:
