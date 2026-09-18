@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 import os
+from pathlib import Path
 
 # ─────────────────────────────────────────────
 # PAGE CONFIG
@@ -64,24 +65,57 @@ plt.rcParams['axes.spines.right'] = False
 # ─────────────────────────────────────────────
 def safe_read_csv(filepath):
     """
-    Reads a CSV safely:
-    - Skips if file doesn't exist or is empty (0 bytes) to prevent EmptyDataError
-    - Tries multiple encodings (utf-8, latin-1, cp1252) to prevent UnicodeDecodeError
-    - Standardizes column names (lowercase, strip, replace spaces with underscores)
+    Safely read a CSV.
+
+    Handles:
+    - missing files
+    - empty files
+    - UTF-8 / UTF-8-SIG / Windows-1252 / Latin-1 encodings
+    - malformed rows without crashing the whole Streamlit app
+    - normalized column names
     """
-    if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
+    path = Path(filepath)
+
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parent / path
+
+    if not path.exists():
         return None
-    
-    for encoding in ['utf-8', 'latin-1', 'cp1252']:
+
+    if path.stat().st_size == 0:
+        return None
+
+    encodings = ["utf-8-sig", "utf-8", "cp1252", "latin-1"]
+
+    for encoding in encodings:
         try:
-            df = pd.read_csv(filepath, encoding=encoding)
-            # Standardize columns immediately!
-            df.columns = df.columns.str.lower().str.strip().str.replace(' ', '_')
+            df = pd.read_csv(
+                path,
+                encoding=encoding,
+                on_bad_lines="skip"
+            )
+
+            if df.empty and len(df.columns) == 0:
+                return None
+
+            # Normalize column names immediately.
+            df.columns = (
+                df.columns.astype(str)
+                .str.lower()
+                .str.strip()
+                .str.replace(r"\\s+", "_", regex=True)
+            )
+
             return df
-        except UnicodeDecodeError:
+
+        except (UnicodeDecodeError, pd.errors.EmptyDataError):
+            continue
+        except (pd.errors.ParserError, ValueError):
+            # Try the next encoding/parser combination.
             continue
         except Exception:
             return None
+
     return None
 
 # ─────────────────────────────────────────────
@@ -95,30 +129,45 @@ def load_data():
         st.error("Error: 'data/netflix_titles.csv' not found or empty.")
         st.stop()
     
-    # Clean base data
-    df['country'] = df['country'].fillna('Unknown')
-    df['director'] = df['director'].fillna('Unknown')
-    df['cast'] = df['cast'].fillna('Unknown')
-    if 'rating' not in df.columns:
-        df['rating'] = 'Not Rated'
-    else:
-        df['rating'] = df['rating'].fillna('Not Rated')
+    # Clean base data.  The Kaggle file should contain these columns,
+    # but create safe fallbacks so a changed/partial CSV cannot crash the app.
+    required_text_columns = {
+        'title': 'Unknown',
+        'type': 'Unknown',
+        'country': 'Unknown',
+        'director': 'Unknown',
+        'cast': 'Unknown',
+        'rating': 'Not Rated',
+        'listed_in': 'Unknown',
+        'duration': 'Unknown',
+        'date_added': ''
+    }
+
+    for col, fallback in required_text_columns.items():
+        if col not in df.columns:
+            df[col] = fallback
+        else:
+            df[col] = df[col].fillna(fallback)
+
+    if 'release_year' not in df.columns:
+        df['release_year'] = np.nan
     # Force to plain strings so sorted()/unique() never chokes on a
     # mixed-type column (e.g. stray numeric ratings in the source CSV)
     df['rating'] = df['rating'].astype(str)
     if 'listed_in' in df.columns:
         df['listed_in'] = df['listed_in'].fillna('Unknown')
         
-    df['date_added'] = pd.to_datetime(df['date_added'].str.strip(), errors='coerce')
+    df['date_added'] = pd.to_datetime(df['date_added'].astype(str).str.strip(), errors='coerce')
     df['year_added'] = df['date_added'].dt.year
     df['release_year'] = pd.to_numeric(df['release_year'], errors='coerce')
     
     # Parse duration (movies only)
     movies_mask = df['type'] == 'Movie'
-    df.loc[movies_mask, 'duration_int'] = (
+    df.loc[movies_mask, 'duration_int'] = pd.to_numeric(
         df.loc[movies_mask, 'duration']
-        .str.extract(r'(\d+)', expand=False)
-        .astype(float)
+        .astype(str)
+        .str.extract(r'(\d+)', expand=False),
+        errors='coerce'
     )
     
     # Create a clean key for merging
@@ -163,9 +212,30 @@ def load_data():
             
             hours_col = next((c for c in global_views.columns if 'hours' in c or 'view' in c), None)
             if hours_col:
-                views_grouped = global_views.groupby('title_clean')[hours_col].sum().reset_index()
-                views_grouped = views_grouped.rename(columns={hours_col: 'total_hours_viewed'})
-                df = pd.merge(df, views_grouped, on='title_clean', how='left')
+                global_views[hours_col] = (
+                    global_views[hours_col]
+                    .astype(str)
+                    .str.replace(',', '', regex=False)
+                    .str.replace('%', '', regex=False)
+                )
+                global_views[hours_col] = pd.to_numeric(
+                    global_views[hours_col], errors='coerce'
+                )
+
+                views_grouped = (
+                    global_views.dropna(subset=[hours_col])
+                    .groupby('title_clean')[hours_col]
+                    .sum()
+                    .reset_index()
+                    .rename(columns={hours_col: 'total_hours_viewed'})
+                )
+
+                if not views_grouped.empty:
+                    df = pd.merge(
+                        df, views_grouped,
+                        on='title_clean',
+                        how='left'
+                    )
 
     # 5. CONTENT INTELLIGENCE
     intel = safe_read_csv('data/netflix_content_intelligence_combined.csv')
@@ -179,6 +249,12 @@ def load_data():
                     cols_to_keep.append(c)
             if len(cols_to_keep) > 1:
                 df = pd.merge(df, intel[cols_to_keep], on='title_clean', how='left')
+
+    # Final schema guard. Merges should not remove the base rating column,
+    # but this prevents a KeyError if a source dataset changes unexpectedly.
+    if 'rating' not in df.columns:
+        df['rating'] = 'Not Rated'
+    df['rating'] = df['rating'].fillna('Not Rated').astype(str)
 
     return df
 
@@ -197,13 +273,23 @@ with st.sidebar:
         default=sorted(df['type'].unique())
     )
 
-    valid_years = df['release_year'].dropna().astype(int)
-    year_min, year_max = int(valid_years.min()), int(valid_years.max())
+    valid_years = pd.to_numeric(df['release_year'], errors='coerce').dropna()
+
+    if valid_years.empty:
+        year_min, year_max = 1900, 2026
+    else:
+        year_min = int(valid_years.min())
+        year_max = int(valid_years.max())
+
+    default_start = max(year_min, 2000)
+    if default_start > year_max:
+        default_start = year_min
+
     year_range = st.slider(
         "Release Year",
         min_value=year_min,
         max_value=year_max,
-        value=(2000, year_max)
+        value=(default_start, year_max)
     )
 
     ratings = st.multiselect(
