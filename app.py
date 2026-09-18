@@ -65,8 +65,8 @@ plt.rcParams['axes.spines.right'] = False
 def safe_read_csv(filepath):
     """
     Reads a CSV safely:
-    - Skips if file doesn't exist or is empty (0 bytes)
-    - Tries multiple encodings (utf-8, latin-1, cp1252)
+    - Skips if file doesn't exist or is empty (0 bytes) to prevent EmptyDataError
+    - Tries multiple encodings (utf-8, latin-1, cp1252) to prevent UnicodeDecodeError
     - Standardizes column names (lowercase, strip, replace spaces with underscores)
     """
     if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
@@ -287,7 +287,8 @@ with tab1:
     st.subheader("Top Ratings by Count")
     ratings_data = filtered['rating'].value_counts().head(10)
     fig, ax = plt.subplots(figsize=(10, 5))
-    sns.barplot(x=ratings_data.index, y=ratings_data.values, palette="Reds_r", ax=ax)
+    # Fixed FutureWarning by using hue
+    sns.barplot(x=ratings_data.index, y=ratings_data.values, hue=ratings_data.index, palette="Reds_r", ax=ax, legend=False)
     for i, v in enumerate(ratings_data.values):
         ax.text(i, v + max(ratings_data.values)*0.01, f'{v:,}', ha='center', fontsize=9)
     ax.set_ylabel("Count")
@@ -348,7 +349,7 @@ with tab3:
     countries = countries[countries != 'Unknown'].value_counts().head(10)
     
     fig, ax = plt.subplots(figsize=(10, 6))
-    sns.barplot(x=countries.values, y=countries.index, palette="Reds_r", ax=ax)
+    sns.barplot(x=countries.values, y=countries.index, hue=countries.index, palette="Reds_r", ax=ax, legend=False)
     for i, v in enumerate(countries.values):
         ax.text(v + max(countries.values)*0.01, i, f'{v:,}', va='center', fontsize=10)
     ax.set_xlabel("Number of Titles")
@@ -370,7 +371,7 @@ with tab4:
     genres = filtered['listed_in'].str.split(', ').explode().value_counts().head(10)
     
     fig, ax = plt.subplots(figsize=(10, 6))
-    sns.barplot(x=genres.values, y=genres.index, palette="Reds_r", ax=ax)
+    sns.barplot(x=genres.values, y=genres.index, hue=genres.index, palette="Reds_r", ax=ax, legend=False)
     for i, v in enumerate(genres.values):
         ax.text(v + max(genres.values)*0.01, i, f'{v:,}', va='center', fontsize=10)
     ax.set_xlabel("Number of Titles")
@@ -390,7 +391,7 @@ with tab4:
     if not movies_only.empty:
         longest = movies_only.nlargest(10, 'duration_int')[['title', 'duration_int']]
         fig, ax = plt.subplots(figsize=(10, 5))
-        sns.barplot(x=longest['duration_int'], y=longest['title'], palette="Reds_r", ax=ax)
+        sns.barplot(x=longest['duration_int'], y=longest['title'], hue=longest['title'], palette="Reds_r", ax=ax, legend=False)
         for i, v in enumerate(longest['duration_int']):
             ax.text(v + 2, i, f'{int(v)} min', va='center', fontsize=9)
         ax.set_xlabel("Duration (minutes)")
@@ -436,7 +437,7 @@ with tab5:
             
             if not top_rated.empty:
                 fig, ax = plt.subplots(figsize=(8, 6))
-                sns.barplot(x=top_rated[imdb_col], y=top_rated['title'], palette="Reds_r", ax=ax)
+                sns.barplot(x=top_rated[imdb_col], y=top_rated['title'], hue=top_rated['title'], palette="Reds_r", ax=ax, legend=False)
                 for i, v in enumerate(top_rated[imdb_col]):
                     ax.text(v + 0.1, i, f'{v:.1f}', va='center', fontsize=9)
                 ax.set_xlabel("IMDb Score")
@@ -479,7 +480,7 @@ with tab6:
         
         if not top_viewed.empty:
             fig, ax = plt.subplots(figsize=(10, 6))
-            sns.barplot(x=top_viewed['total_hours_viewed'], y=top_viewed['title'], palette="Reds_r", ax=ax)
+            sns.barplot(x=top_viewed['total_hours_viewed'], y=top_viewed['title'], hue=top_viewed['title'], palette="Reds_r", ax=ax, legend=False)
             for i, v in enumerate(top_viewed['total_hours_viewed']):
                 label = f'{v/1000000:.1f}M' if v > 1000000 else f'{v/1000:.0f}K'
                 ax.text(v + (top_viewed['total_hours_viewed'].max() * 0.01), i, label, va='center', fontsize=9)
