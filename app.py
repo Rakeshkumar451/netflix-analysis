@@ -93,50 +93,68 @@ def load_data():
     # 2. ENRICHED DATA (IMDb & TMDb)
     try:
         enriched = pd.read_csv('data/netflix_large_dataset_cleaned.csv')
-        enriched['title_clean'] = enriched['title'].str.lower().str.strip()
-        cols_to_keep = ['title_clean']
-        for c in ['imdb_score', 'tmdb_popularity', 'imdb_votes']:
-            if c in enriched.columns: cols_to_keep.append(c)
-        df = pd.merge(df, enriched[cols_to_keep], on='title_clean', how='left')
+        enriched.columns = enriched.columns.str.lower().str.strip()
+        # Find the title column dynamically
+        title_col = next((c for c in enriched.columns if 'title' in c), None)
+        if title_col:
+            enriched['title_clean'] = enriched[title_col].str.lower().str.strip()
+            cols_to_keep = ['title_clean']
+            for c in ['imdb_score', 'tmdb_popularity', 'imdb_votes']:
+                if c in enriched.columns: cols_to_keep.append(c)
+            df = pd.merge(df, enriched[cols_to_keep], on='title_clean', how='left')
     except FileNotFoundError:
         st.sidebar.warning("⚠️ Enriched dataset not found.")
 
     # 3. ROTTEN TOMATOES & METACRITIC
     try:
         rt = pd.read_csv('data/netflix-rotten-tomatoes-metacritic-imdb.csv')
-        rt['title_clean'] = rt['title'].str.lower().str.strip()
-        rt = rt.rename(columns={'Rotten Tomatoes': 'rotten_tomatoes', 'Metacritic': 'metacritic'})
-        cols_to_keep = ['title_clean']
-        for c in ['rotten_tomatoes', 'metacritic']:
-            if c in rt.columns: cols_to_keep.append(c)
-        df = pd.merge(df, rt[cols_to_keep], on='title_clean', how='left')
+        rt.columns = rt.columns.str.lower().str.strip().str.replace(' ', '_')
+        
+        # Dynamically find the title column (handles 'title', 'show_title', etc.)
+        title_col = next((c for c in rt.columns if 'title' in c or 'name' in c), None)
+        if title_col:
+            rt['title_clean'] = rt[title_col].str.lower().str.strip()
+            cols_to_keep = ['title_clean']
+            for c in ['rotten_tomatoes', 'metacritic']:
+                if c in rt.columns: cols_to_keep.append(c)
+            df = pd.merge(df, rt[cols_to_keep], on='title_clean', how='left')
+        else:
+            st.sidebar.warning("⚠️ Could not find title column in Rotten Tomatoes data.")
     except FileNotFoundError:
         st.sidebar.warning("⚠️ Rotten Tomatoes dataset not found.")
 
     # 4. OFFICIAL VIEWERSHIP (Global)
     try:
         global_views = pd.read_csv('data/all-weeks-global.csv')
-        if 'show_title' in global_views.columns:
-            global_views = global_views.rename(columns={'show_title': 'title_clean'})
-        global_views['title_clean'] = global_views['title_clean'].str.lower().str.strip()
+        global_views.columns = global_views.columns.str.lower().str.strip()
         
-        # Sum total hours viewed across all weeks
-        views_grouped = global_views.groupby('title_clean')['weekly_hours_viewed'].sum().reset_index()
-        views_grouped = views_grouped.rename(columns={'weekly_hours_viewed': 'total_hours_viewed'})
-        
-        df = pd.merge(df, views_grouped, on='title_clean', how='left')
+        # Dynamically find the title column
+        title_col = next((c for c in global_views.columns if 'title' in c or 'show' in c), None)
+        if title_col:
+            global_views = global_views.rename(columns={title_col: 'title_clean'})
+            global_views['title_clean'] = global_views['title_clean'].str.lower().str.strip()
+            
+            # Sum total hours viewed across all weeks
+            hours_col = next((c for c in global_views.columns if 'hours' in c or 'view' in c), 'weekly_hours_viewed')
+            views_grouped = global_views.groupby('title_clean')[hours_col].sum().reset_index()
+            views_grouped = views_grouped.rename(columns={hours_col: 'total_hours_viewed'})
+            
+            df = pd.merge(df, views_grouped, on='title_clean', how='left')
     except FileNotFoundError:
         st.sidebar.warning("⚠️ Viewership dataset not found.")
 
     # 5. CONTENT INTELLIGENCE
     try:
         intel = pd.read_csv('data/netflix_content_intelligence_combined.csv')
-        intel['title_clean'] = intel['title'].str.lower().str.strip()
-        cols_to_keep = ['title_clean']
-        for c in ['sentiment_score', 'popularity_rank', 'content_type']:
-            if c in intel.columns: cols_to_keep.append(c)
-        if len(cols_to_keep) > 1:
-            df = pd.merge(df, intel[cols_to_keep], on='title_clean', how='left')
+        intel.columns = intel.columns.str.lower().str.strip()
+        title_col = next((c for c in intel.columns if 'title' in c), None)
+        if title_col:
+            intel['title_clean'] = intel[title_col].str.lower().str.strip()
+            cols_to_keep = ['title_clean']
+            for c in ['sentiment_score', 'popularity_rank', 'content_type']:
+                if c in intel.columns: cols_to_keep.append(c)
+            if len(cols_to_keep) > 1:
+                df = pd.merge(df, intel[cols_to_keep], on='title_clean', how='left')
     except FileNotFoundError:
         pass
 
@@ -481,7 +499,7 @@ with tab7:
             'release_year': 'Year', 'rating': 'Rating', 'duration': 'Duration',
             'imdb_score': 'IMDb', 'total_hours_viewed': 'Hours Viewed'
         }),
-        use_container_width=True,
+        width='stretch',
         height=500
     )
     
