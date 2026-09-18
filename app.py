@@ -69,6 +69,8 @@ def load_data():
     except FileNotFoundError:
         st.error("Error: 'data/netflix_titles.csv' not found.")
         st.stop()
+    except UnicodeDecodeError:
+        df = pd.read_csv('data/netflix_titles.csv', encoding='latin-1')
     
     # Clean base data
     df['country'] = df['country'].fillna('Unknown')
@@ -92,7 +94,7 @@ def load_data():
 
     # 2. ENRICHED DATA (IMDb & TMDb)
     try:
-        enriched = pd.read_csv('data/netflix_large_dataset_cleaned.csv')
+        enriched = pd.read_csv('data/netflix_large_dataset_cleaned.csv', encoding='latin-1')
         enriched.columns = enriched.columns.str.lower().str.strip()
         # Find the title column dynamically
         title_col = next((c for c in enriched.columns if 'title' in c), None)
@@ -107,7 +109,7 @@ def load_data():
 
     # 3. ROTTEN TOMATOES & METACRITIC
     try:
-        rt = pd.read_csv('data/netflix-rotten-tomatoes-metacritic-imdb.csv')
+        rt = pd.read_csv('data/netflix-rotten-tomatoes-metacritic-imdb.csv', encoding='latin-1')
         rt.columns = rt.columns.str.lower().str.strip().str.replace(' ', '_')
         
         # Dynamically find the title column (handles 'title', 'show_title', etc.)
@@ -125,7 +127,7 @@ def load_data():
 
     # 4. OFFICIAL VIEWERSHIP (Global)
     try:
-        global_views = pd.read_csv('data/all-weeks-global.csv')
+        global_views = pd.read_csv('data/all-weeks-global.csv', encoding='latin-1')
         global_views.columns = global_views.columns.str.lower().str.strip()
         
         # Dynamically find the title column
@@ -145,7 +147,7 @@ def load_data():
 
     # 5. CONTENT INTELLIGENCE
     try:
-        intel = pd.read_csv('data/netflix_content_intelligence_combined.csv')
+        intel = pd.read_csv('data/netflix_content_intelligence_combined.csv', encoding='latin-1')
         intel.columns = intel.columns.str.lower().str.strip()
         title_col = next((c for c in intel.columns if 'title' in c), None)
         if title_col:
