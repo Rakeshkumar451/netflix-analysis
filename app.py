@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
+import os
 
 # ─────────────────────────────────────────────
 # PAGE CONFIG
@@ -15,7 +16,7 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────────
-# MINIMALIST STYLING
+# MINIMALIST STYLING (Your Exact Version)
 # ─────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -59,24 +60,50 @@ plt.rcParams['axes.spines.top'] = False
 plt.rcParams['axes.spines.right'] = False
 
 # ─────────────────────────────────────────────
+# SMART DATA LOADING HELPER (The Fix)
+# ─────────────────────────────────────────────
+def safe_read_csv(filepath):
+    """
+    Reads a CSV safely:
+    - Skips if file doesn't exist or is empty (0 bytes)
+    - Tries multiple encodings (utf-8, latin-1, cp1252)
+    - Standardizes column names (lowercase, strip, replace spaces with underscores)
+    """
+    if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
+        return None
+    
+    for encoding in ['utf-8', 'latin-1', 'cp1252']:
+        try:
+            df = pd.read_csv(filepath, encoding=encoding)
+            # Standardize columns immediately!
+            df.columns = df.columns.str.lower().str.strip().str.replace(' ', '_')
+            return df
+        except UnicodeDecodeError:
+            continue
+        except Exception:
+            return None
+    return None
+
+# ─────────────────────────────────────────────
 # DATA LOADING & MERGING
 # ─────────────────────────────────────────────
 @st.cache_data(show_spinner=False)
 def load_data():
     # 1. BASE DATA
-    try:
-        df = pd.read_csv('data/netflix_titles.csv')
-    except FileNotFoundError:
-        st.error("Error: 'data/netflix_titles.csv' not found.")
+    df = safe_read_csv('data/netflix_titles.csv')
+    if df is None:
+        st.error("Error: 'data/netflix_titles.csv' not found or empty.")
         st.stop()
-    except UnicodeDecodeError:
-        df = pd.read_csv('data/netflix_titles.csv', encoding='latin-1')
     
     # Clean base data
     df['country'] = df['country'].fillna('Unknown')
     df['director'] = df['director'].fillna('Unknown')
     df['cast'] = df['cast'].fillna('Unknown')
-    df['rating'] = df['rating'].fillna('Not Rated')
+    if 'rating' not in df.columns:
+        df['rating'] = 'Not Rated'
+    else:
+        df['rating'] = df['rating'].fillna('Not Rated')
+        
     df['date_added'] = pd.to_datetime(df['date_added'].str.strip(), errors='coerce')
     df['year_added'] = df['date_added'].dt.year
     df['release_year'] = pd.to_numeric(df['release_year'], errors='coerce')
@@ -93,72 +120,60 @@ def load_data():
     df['title_clean'] = df['title'].str.lower().str.strip()
 
     # 2. ENRICHED DATA (IMDb & TMDb)
-    try:
-        enriched = pd.read_csv('data/netflix_large_dataset_cleaned.csv', encoding='latin-1')
-        enriched.columns = enriched.columns.str.lower().str.strip()
-        # Find the title column dynamically
+    enriched = safe_read_csv('data/netflix_large_dataset_cleaned.csv')
+    if enriched is not None:
+        # Dynamically find the title column
         title_col = next((c for c in enriched.columns if 'title' in c), None)
         if title_col:
             enriched['title_clean'] = enriched[title_col].str.lower().str.strip()
+            # Only merge columns that have scores/popularity
             cols_to_keep = ['title_clean']
-            for c in ['imdb_score', 'tmdb_popularity', 'imdb_votes']:
-                if c in enriched.columns: cols_to_keep.append(c)
+            for c in enriched.columns:
+                if any(k in c for k in ['imdb', 'score', 'vote', 'popularity']) and c not in df.columns:
+                    cols_to_keep.append(c)
             df = pd.merge(df, enriched[cols_to_keep], on='title_clean', how='left')
-    except FileNotFoundError:
-        st.sidebar.warning("⚠️ Enriched dataset not found.")
+    else:
+        st.sidebar.warning("⚠️ Enriched dataset missing or empty.")
 
     # 3. ROTTEN TOMATOES & METACRITIC
-    try:
-        rt = pd.read_csv('data/netflix-rotten-tomatoes-metacritic-imdb.csv', encoding='latin-1')
-        rt.columns = rt.columns.str.lower().str.strip().str.replace(' ', '_')
-        
-        # Dynamically find the title column (handles 'title', 'show_title', etc.)
+    rt = safe_read_csv('data/netflix-rotten-tomatoes-metacritic-imdb.csv')
+    if rt is not None:
         title_col = next((c for c in rt.columns if 'title' in c or 'name' in c), None)
         if title_col:
             rt['title_clean'] = rt[title_col].str.lower().str.strip()
             cols_to_keep = ['title_clean']
-            for c in ['rotten_tomatoes', 'metacritic']:
-                if c in rt.columns: cols_to_keep.append(c)
-            df = pd.merge(df, rt[cols_to_keep], on='title_clean', how='left')
-        else:
-            st.sidebar.warning("⚠️ Could not find title column in Rotten Tomatoes data.")
-    except FileNotFoundError:
-        st.sidebar.warning("⚠️ Rotten Tomatoes dataset not found.")
+            for c in rt.columns:
+                if ('rotten' in c or 'metacritic' in c) and c not in df.columns:
+                    cols_to_keep.append(c)
+            if len(cols_to_keep) > 1:
+                df = pd.merge(df, rt[cols_to_keep], on='title_clean', how='left')
 
     # 4. OFFICIAL VIEWERSHIP (Global)
-    try:
-        global_views = pd.read_csv('data/all-weeks-global.csv', encoding='latin-1')
-        global_views.columns = global_views.columns.str.lower().str.strip()
-        
-        # Dynamically find the title column
+    global_views = safe_read_csv('data/all-weeks-global.csv')
+    if global_views is not None:
         title_col = next((c for c in global_views.columns if 'title' in c or 'show' in c), None)
         if title_col:
             global_views = global_views.rename(columns={title_col: 'title_clean'})
             global_views['title_clean'] = global_views['title_clean'].str.lower().str.strip()
             
-            # Sum total hours viewed across all weeks
-            hours_col = next((c for c in global_views.columns if 'hours' in c or 'view' in c), 'weekly_hours_viewed')
-            views_grouped = global_views.groupby('title_clean')[hours_col].sum().reset_index()
-            views_grouped = views_grouped.rename(columns={hours_col: 'total_hours_viewed'})
-            
-            df = pd.merge(df, views_grouped, on='title_clean', how='left')
-    except FileNotFoundError:
-        st.sidebar.warning("⚠️ Viewership dataset not found.")
+            hours_col = next((c for c in global_views.columns if 'hours' in c or 'view' in c), None)
+            if hours_col:
+                views_grouped = global_views.groupby('title_clean')[hours_col].sum().reset_index()
+                views_grouped = views_grouped.rename(columns={hours_col: 'total_hours_viewed'})
+                df = pd.merge(df, views_grouped, on='title_clean', how='left')
 
     # 5. CONTENT INTELLIGENCE
-    try:
-        intel = pd.read_csv('data/netflix_content_intelligence_combined.csv', encoding='latin-1')
-        intel.columns = intel.columns.str.lower().str.strip()
+    intel = safe_read_csv('data/netflix_content_intelligence_combined.csv')
+    if intel is not None:
         title_col = next((c for c in intel.columns if 'title' in c), None)
         if title_col:
             intel['title_clean'] = intel[title_col].str.lower().str.strip()
             cols_to_keep = ['title_clean']
-            for c in ['sentiment_score', 'popularity_rank', 'content_type']:
-                if c in intel.columns: cols_to_keep.append(c)
+            for c in intel.columns:
+                if any(k in c for k in ['sentiment', 'popularity', 'content_type']) and c not in df.columns:
+                    cols_to_keep.append(c)
             if len(cols_to_keep) > 1:
                 df = pd.merge(df, intel[cols_to_keep], on='title_clean', how='left')
-    except FileNotFoundError:
-        pass
 
     return df
 
@@ -215,9 +230,11 @@ col1.metric("Total Titles", f"{len(filtered):,}")
 col2.metric("Movies", f"{(filtered['type'] == 'Movie').sum():,}")
 col3.metric("TV Shows", f"{(filtered['type'] == 'TV Show').sum():,}")
 col4.metric("Countries", f"{filtered['country'].str.split(', ').explode().nunique():,}")
-# Show IMDb score metric if data is available
-if 'imdb_score' in filtered.columns:
-    avg_imdb = filtered['imdb_score'].mean()
+
+# Dynamically find the imdb column to fix the "N/A" issue
+imdb_col = next((c for c in filtered.columns if 'imdb' in c and ('score' in c or 'rating' in c)), None)
+if imdb_col:
+    avg_imdb = pd.to_numeric(filtered[imdb_col], errors='coerce').mean()
     col5.metric("Avg IMDb Score", f"{avg_imdb:.1f}" if pd.notna(avg_imdb) else "N/A")
 else:
     col5.metric("Avg IMDb Score", "N/A")
@@ -381,57 +398,63 @@ with tab4:
         plt.close(fig)
 
 
-# ─── TAB 5: SCORES & RATINGS (NEW) ───
+# ─── TAB 5: SCORES & RATINGS ───
 with tab5:
     st.subheader("⭐ Critical Reception Analysis")
     
-    if 'imdb_score' in filtered.columns or 'rotten_tomatoes' in filtered.columns:
+    if imdb_col:
         c1, c2 = st.columns(2)
+        pop_col = next((c for c in filtered.columns if 'popularity' in c or 'vote' in c), None)
         
         with c1:
-            st.markdown("**IMDb Score vs. TMDb Popularity**")
-            if 'imdb_score' in filtered.columns and 'tmdb_popularity' in filtered.columns:
-                plot_df = filtered.dropna(subset=['imdb_score', 'tmdb_popularity'])
+            st.markdown("**IMDb Score vs. Popularity**")
+            if pop_col:
+                plot_df = filtered.dropna(subset=[imdb_col, pop_col]).copy()
+                plot_df[imdb_col] = pd.to_numeric(plot_df[imdb_col], errors='coerce')
+                plot_df[pop_col] = pd.to_numeric(plot_df[pop_col], errors='coerce')
+                plot_df = plot_df.dropna(subset=[imdb_col, pop_col])
+                
                 if not plot_df.empty:
                     fig, ax = plt.subplots(figsize=(8, 6))
-                    sns.scatterplot(data=plot_df, x='imdb_score', y='tmdb_popularity',
+                    sns.scatterplot(data=plot_df, x=imdb_col, y=pop_col,
                                     hue='type', alpha=0.6, ax=ax,
                                     palette={'Movie': '#E50914', 'TV Show': '#4A4A4A'})
                     ax.set_xlabel("IMDb Score")
-                    ax.set_ylabel("TMDb Popularity")
+                    ax.set_ylabel("Popularity")
                     st.pyplot(fig)
                     plt.close(fig)
                 else:
                     st.info("Not enough overlapping data for this chart.")
             else:
-                st.info("IMDb or TMDb columns missing.")
+                st.info("Popularity column missing.")
 
         with c2:
             st.markdown("**Top 10 Highest Rated on IMDb**")
-            if 'imdb_score' in filtered.columns:
-                top_rated = filtered[filtered['type'] == 'Movie'].dropna(subset=['imdb_score']).nlargest(10, 'imdb_score')
-                if not top_rated.empty:
-                    fig, ax = plt.subplots(figsize=(8, 6))
-                    sns.barplot(x=top_rated['imdb_score'], y=top_rated['title'], palette="Reds_r", ax=ax)
-                    for i, v in enumerate(top_rated['imdb_score']):
-                        ax.text(v + 0.1, i, f'{v:.1f}', va='center', fontsize=9)
-                    ax.set_xlabel("IMDb Score")
-                    st.pyplot(fig)
-                    plt.close(fig)
+            top_rated = filtered[filtered['type'] == 'Movie'].copy()
+            top_rated[imdb_col] = pd.to_numeric(top_rated[imdb_col], errors='coerce')
+            top_rated = top_rated.dropna(subset=[imdb_col]).nlargest(10, imdb_col)
+            
+            if not top_rated.empty:
+                fig, ax = plt.subplots(figsize=(8, 6))
+                sns.barplot(x=top_rated[imdb_col], y=top_rated['title'], palette="Reds_r", ax=ax)
+                for i, v in enumerate(top_rated[imdb_col]):
+                    ax.text(v + 0.1, i, f'{v:.1f}', va='center', fontsize=9)
+                ax.set_xlabel("IMDb Score")
+                st.pyplot(fig)
+                plt.close(fig)
         
         st.divider()
         st.markdown("**Compare Critics: IMDb vs Rotten Tomatoes**")
-        if 'imdb_score' in filtered.columns and 'rotten_tomatoes' in filtered.columns:
-            compare_df = filtered.dropna(subset=['imdb_score', 'rotten_tomatoes']).copy()
+        if 'rotten_tomatoes' in filtered.columns:
+            compare_df = filtered.dropna(subset=[imdb_col, 'rotten_tomatoes']).copy()
             if not compare_df.empty:
-                # Clean RT column if it's a string like "90%"
                 compare_df['rotten_tomatoes'] = compare_df['rotten_tomatoes'].astype(str).str.replace('%', '')
                 compare_df['rotten_tomatoes'] = pd.to_numeric(compare_df['rotten_tomatoes'], errors='coerce')
                 compare_df = compare_df.dropna(subset=['rotten_tomatoes'])
 
                 if not compare_df.empty:
                     fig, ax = plt.subplots(figsize=(10, 5))
-                    ax.scatter(compare_df['rotten_tomatoes'], compare_df['imdb_score'] * 10, 
+                    ax.scatter(compare_df['rotten_tomatoes'], compare_df[imdb_col] * 10, 
                                alpha=0.5, color='#E50914')
                     ax.set_xlabel("Rotten Tomatoes Score (%)")
                     ax.set_ylabel("IMDb Score (scaled to 100)")
@@ -443,10 +466,11 @@ with tab5:
             else:
                 st.info("No overlapping data for score comparison.")
     else:
-        st.warning("⚠️ No score data found. Please ensure 'netflix_large_dataset_cleaned.csv' and 'netflix-rotten-tomatoes-metacritic-imdb.csv' are loaded correctly.")
+        st.warning("⚠️ No score data found. Please ensure 'netflix_large_dataset_cleaned.csv' is loaded correctly.")
+        with st.expander("🔧 Debug: See loaded columns"):
+            st.write(list(df.columns))
 
-
-# ─── TAB 6: VIEWERSHIP (NEW) ───
+# ─── TAB 6: VIEWERSHIP ───
 with tab6:
     st.subheader("📺 Official Viewership Analytics")
     
@@ -475,7 +499,6 @@ with tab6:
     else:
         st.warning("⚠️ Viewership dataset missing or column names mismatch. Please ensure 'all-weeks-global.csv' is loaded correctly.")
 
-
 # ─── TAB 7: EXPLORE ───
 with tab7:
     st.subheader("🔍 Explore the Catalog")
@@ -488,10 +511,9 @@ with tab7:
     
     st.markdown(f"Showing **{len(view):,}** titles")
     
-    # Show extra columns if they exist
     display_cols = ['title', 'type', 'country', 'release_year', 'rating', 'duration']
-    if 'imdb_score' in view.columns:
-        display_cols.append('imdb_score')
+    if imdb_col:
+        display_cols.append(imdb_col)
     if 'total_hours_viewed' in view.columns:
         display_cols.append('total_hours_viewed')
         
@@ -499,7 +521,7 @@ with tab7:
         view[display_cols].rename(columns={
             'title': 'Title', 'type': 'Type', 'country': 'Country',
             'release_year': 'Year', 'rating': 'Rating', 'duration': 'Duration',
-            'imdb_score': 'IMDb', 'total_hours_viewed': 'Hours Viewed'
+            imdb_col: 'IMDb', 'total_hours_viewed': 'Hours Viewed'
         }),
         width='stretch',
         height=500
