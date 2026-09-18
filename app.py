@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 import os
-from pathlib import Path
 
 # ─────────────────────────────────────────────
 # PAGE CONFIG
@@ -65,57 +64,24 @@ plt.rcParams['axes.spines.right'] = False
 # ─────────────────────────────────────────────
 def safe_read_csv(filepath):
     """
-    Safely read a CSV.
-
-    Handles:
-    - missing files
-    - empty files
-    - UTF-8 / UTF-8-SIG / Windows-1252 / Latin-1 encodings
-    - malformed rows without crashing the whole Streamlit app
-    - normalized column names
+    Reads a CSV safely:
+    - Skips if file doesn't exist or is empty (0 bytes) to prevent EmptyDataError
+    - Tries multiple encodings (utf-8, latin-1, cp1252) to prevent UnicodeDecodeError
+    - Standardizes column names (lowercase, strip, replace spaces with underscores)
     """
-    path = Path(filepath)
-
-    if not path.is_absolute():
-        path = Path(__file__).resolve().parent / path
-
-    if not path.exists():
+    if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
         return None
-
-    if path.stat().st_size == 0:
-        return None
-
-    encodings = ["utf-8-sig", "utf-8", "cp1252", "latin-1"]
-
-    for encoding in encodings:
+    
+    for encoding in ['utf-8', 'latin-1', 'cp1252']:
         try:
-            df = pd.read_csv(
-                path,
-                encoding=encoding,
-                on_bad_lines="skip"
-            )
-
-            if df.empty and len(df.columns) == 0:
-                return None
-
-            # Normalize column names immediately.
-            df.columns = (
-                df.columns.astype(str)
-                .str.lower()
-                .str.strip()
-                .str.replace(r"\\s+", "_", regex=True)
-            )
-
+            df = pd.read_csv(filepath, encoding=encoding)
+            # Standardize columns immediately!
+            df.columns = df.columns.str.lower().str.strip().str.replace(' ', '_')
             return df
-
-        except (UnicodeDecodeError, pd.errors.EmptyDataError):
-            continue
-        except (pd.errors.ParserError, ValueError):
-            # Try the next encoding/parser combination.
+        except UnicodeDecodeError:
             continue
         except Exception:
             return None
-
     return None
 
 # ─────────────────────────────────────────────
@@ -129,137 +95,147 @@ def load_data():
         st.error("Error: 'data/netflix_titles.csv' not found or empty.")
         st.stop()
     
-    # Clean base data.  The Kaggle file should contain these columns,
-    # but create safe fallbacks so a changed/partial CSV cannot crash the app.
-    required_text_columns = {
-        'title': 'Unknown',
-        'type': 'Unknown',
-        'country': 'Unknown',
-        'director': 'Unknown',
-        'cast': 'Unknown',
-        'rating': 'Not Rated',
-        'listed_in': 'Unknown',
-        'duration': 'Unknown',
-        'date_added': ''
-    }
-
-    for col, fallback in required_text_columns.items():
-        if col not in df.columns:
-            df[col] = fallback
-        else:
-            df[col] = df[col].fillna(fallback)
-
-    if 'release_year' not in df.columns:
-        df['release_year'] = np.nan
+    # Clean base data
+    df['country'] = df['country'].fillna('Unknown')
+    df['director'] = df['director'].fillna('Unknown')
+    df['cast'] = df['cast'].fillna('Unknown')
+    if 'rating' not in df.columns:
+        df['rating'] = 'Not Rated'
+    else:
+        df['rating'] = df['rating'].fillna('Not Rated')
     # Force to plain strings so sorted()/unique() never chokes on a
     # mixed-type column (e.g. stray numeric ratings in the source CSV)
     df['rating'] = df['rating'].astype(str)
     if 'listed_in' in df.columns:
         df['listed_in'] = df['listed_in'].fillna('Unknown')
         
-    df['date_added'] = pd.to_datetime(df['date_added'].astype(str).str.strip(), errors='coerce')
+    df['date_added'] = pd.to_datetime(df['date_added'].str.strip(), errors='coerce')
     df['year_added'] = df['date_added'].dt.year
     df['release_year'] = pd.to_numeric(df['release_year'], errors='coerce')
     
     # Parse duration (movies only)
     movies_mask = df['type'] == 'Movie'
-    df.loc[movies_mask, 'duration_int'] = pd.to_numeric(
+    df.loc[movies_mask, 'duration_int'] = (
         df.loc[movies_mask, 'duration']
-        .astype(str)
-        .str.extract(r'(\d+)', expand=False),
-        errors='coerce'
+        .str.extract(r'(\d+)', expand=False)
+        .astype(float)
     )
     
     # Create a clean key for merging
     df['title_clean'] = df['title'].str.lower().str.strip()
 
+    # ── Diagnostics: track exactly what happened to each optional source ──
+    load_report = []
+
+    def _report(name, status, detail=""):
+        load_report.append((name, status, detail))
+
     # 2. ENRICHED DATA (IMDb & TMDb)
-    enriched = safe_read_csv('data/netflix_large_dataset_cleaned.csv')
-    if enriched is not None:
-        # Dynamically find the title column
+    enriched_path = 'data/netflix_large_dataset_cleaned.csv'
+    enriched = safe_read_csv(enriched_path)
+    if enriched is None:
+        _report(enriched_path, "missing/unreadable",
+                "file not found, empty, or unreadable in every tried encoding")
+    else:
         title_col = next((c for c in enriched.columns if 'title' in c), None)
-        if title_col:
+        if not title_col:
+            _report(enriched_path, "loaded but no title column",
+                    f"columns seen: {list(enriched.columns)}")
+        else:
             enriched['title_clean'] = enriched[title_col].str.lower().str.strip()
-            # Only merge columns that have scores/popularity
             cols_to_keep = ['title_clean']
             for c in enriched.columns:
                 if any(k in c for k in ['imdb', 'score', 'vote', 'popularity']) and c not in df.columns:
                     cols_to_keep.append(c)
-            df = pd.merge(df, enriched[cols_to_keep], on='title_clean', how='left')
-    else:
-        st.sidebar.warning("⚠️ Enriched dataset missing or empty.")
+            if len(cols_to_keep) == 1:
+                _report(enriched_path, "loaded but no score/imdb/vote/popularity columns found",
+                        f"columns seen: {list(enriched.columns)}")
+            else:
+                before = df['title_clean'].isin(enriched['title_clean']).sum()
+                df = pd.merge(df, enriched[cols_to_keep], on='title_clean', how='left')
+                _report(enriched_path, "merged", f"{before:,} titles matched out of {len(df):,}")
 
     # 3. ROTTEN TOMATOES & METACRITIC
-    rt = safe_read_csv('data/netflix-rotten-tomatoes-metacritic-imdb.csv')
-    if rt is not None:
+    rt_path = 'data/netflix-rotten-tomatoes-metacritic-imdb.csv'
+    rt = safe_read_csv(rt_path)
+    if rt is None:
+        _report(rt_path, "missing/unreadable", "")
+    else:
         title_col = next((c for c in rt.columns if 'title' in c or 'name' in c), None)
-        if title_col:
+        if not title_col:
+            _report(rt_path, "loaded but no title/name column", f"columns seen: {list(rt.columns)}")
+        else:
             rt['title_clean'] = rt[title_col].str.lower().str.strip()
             cols_to_keep = ['title_clean']
             for c in rt.columns:
                 if ('rotten' in c or 'metacritic' in c) and c not in df.columns:
                     cols_to_keep.append(c)
-            if len(cols_to_keep) > 1:
+            if len(cols_to_keep) == 1:
+                _report(rt_path, "loaded but no rotten/metacritic columns found",
+                        f"columns seen: {list(rt.columns)}")
+            else:
+                before = df['title_clean'].isin(rt['title_clean']).sum()
                 df = pd.merge(df, rt[cols_to_keep], on='title_clean', how='left')
+                _report(rt_path, "merged", f"{before:,} titles matched out of {len(df):,}")
 
     # 4. OFFICIAL VIEWERSHIP (Global)
-    global_views = safe_read_csv('data/all-weeks-global.csv')
-    if global_views is not None:
+    gv_path = 'data/all-weeks-global.csv'
+    global_views = safe_read_csv(gv_path)
+    if global_views is None:
+        _report(gv_path, "missing/unreadable", "")
+    else:
         title_col = next((c for c in global_views.columns if 'title' in c or 'show' in c), None)
-        if title_col:
+        if not title_col:
+            _report(gv_path, "loaded but no title/show column", f"columns seen: {list(global_views.columns)}")
+        else:
             global_views = global_views.rename(columns={title_col: 'title_clean'})
             global_views['title_clean'] = global_views['title_clean'].str.lower().str.strip()
-            
             hours_col = next((c for c in global_views.columns if 'hours' in c or 'view' in c), None)
-            if hours_col:
-                global_views[hours_col] = (
-                    global_views[hours_col]
-                    .astype(str)
-                    .str.replace(',', '', regex=False)
-                    .str.replace('%', '', regex=False)
-                )
-                global_views[hours_col] = pd.to_numeric(
-                    global_views[hours_col], errors='coerce'
-                )
-
-                views_grouped = (
-                    global_views.dropna(subset=[hours_col])
-                    .groupby('title_clean')[hours_col]
-                    .sum()
-                    .reset_index()
-                    .rename(columns={hours_col: 'total_hours_viewed'})
-                )
-
-                if not views_grouped.empty:
-                    df = pd.merge(
-                        df, views_grouped,
-                        on='title_clean',
-                        how='left'
-                    )
+            if not hours_col:
+                _report(gv_path, "loaded but no hours/view column", f"columns seen: {list(global_views.columns)}")
+            else:
+                views_grouped = global_views.groupby('title_clean')[hours_col].sum().reset_index()
+                views_grouped = views_grouped.rename(columns={hours_col: 'total_hours_viewed'})
+                before = df['title_clean'].isin(views_grouped['title_clean']).sum()
+                df = pd.merge(df, views_grouped, on='title_clean', how='left')
+                _report(gv_path, "merged", f"{before:,} titles matched out of {len(df):,}")
 
     # 5. CONTENT INTELLIGENCE
-    intel = safe_read_csv('data/netflix_content_intelligence_combined.csv')
-    if intel is not None:
+    intel_path = 'data/netflix_content_intelligence_combined.csv'
+    intel = safe_read_csv(intel_path)
+    if intel is None:
+        _report(intel_path, "missing/unreadable", "")
+    else:
         title_col = next((c for c in intel.columns if 'title' in c), None)
-        if title_col:
+        if not title_col:
+            _report(intel_path, "loaded but no title column", f"columns seen: {list(intel.columns)}")
+        else:
             intel['title_clean'] = intel[title_col].str.lower().str.strip()
             cols_to_keep = ['title_clean']
             for c in intel.columns:
                 if any(k in c for k in ['sentiment', 'popularity', 'content_type']) and c not in df.columns:
                     cols_to_keep.append(c)
-            if len(cols_to_keep) > 1:
+            if len(cols_to_keep) == 1:
+                _report(intel_path, "loaded but no sentiment/popularity/content_type columns found",
+                        f"columns seen: {list(intel.columns)}")
+            else:
+                before = df['title_clean'].isin(intel['title_clean']).sum()
                 df = pd.merge(df, intel[cols_to_keep], on='title_clean', how='left')
+                _report(intel_path, "merged", f"{before:,} titles matched out of {len(df):,}")
 
-    # Final schema guard. Merges should not remove the base rating column,
-    # but this prevents a KeyError if a source dataset changes unexpectedly.
-    if 'rating' not in df.columns:
-        df['rating'] = 'Not Rated'
-    df['rating'] = df['rating'].fillna('Not Rated').astype(str)
-
+    df.attrs['load_report'] = load_report
     return df
 
 with st.spinner("Loading and merging all datasets..."):
     df = load_data()
+
+# Always-visible diagnostics for the optional enrichment sources, so a
+# missing/mismatched file in the deployed repo is obvious at a glance
+# instead of showing up only as a downstream "No score data found" warning.
+with st.sidebar.expander("📦 Data source status", expanded=False):
+    for name, status, detail in df.attrs.get('load_report', []):
+        icon = "✅" if status == "merged" else "⚠️"
+        st.markdown(f"{icon} **{name}**  \n{status}" + (f"  \n_{detail}_" if detail else ""))
 
 # ─────────────────────────────────────────────
 # SIDEBAR FILTERS
@@ -273,23 +249,13 @@ with st.sidebar:
         default=sorted(df['type'].unique())
     )
 
-    valid_years = pd.to_numeric(df['release_year'], errors='coerce').dropna()
-
-    if valid_years.empty:
-        year_min, year_max = 1900, 2026
-    else:
-        year_min = int(valid_years.min())
-        year_max = int(valid_years.max())
-
-    default_start = max(year_min, 2000)
-    if default_start > year_max:
-        default_start = year_min
-
+    valid_years = df['release_year'].dropna().astype(int)
+    year_min, year_max = int(valid_years.min()), int(valid_years.max())
     year_range = st.slider(
         "Release Year",
         min_value=year_min,
         max_value=year_max,
-        value=(default_start, year_max)
+        value=(2000, year_max)
     )
 
     ratings = st.multiselect(
